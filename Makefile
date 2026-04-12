@@ -1,6 +1,8 @@
-.PHONY: all cluster calico cert gateway-crds gateway demo clean
+.PHONY: all bootstrap platform api controllers demo clean tls
 
-all: cluster calico cert demo gateway-crds gateway
+all: bootstrap api controllers tls demo
+
+bootstrap: cluster calico cert
 
 cluster:
 	chmod +x scripts/cluster.sh
@@ -14,16 +16,53 @@ cert:
 	chmod +x scripts/install-cert-manager.sh
 	./scripts/install-cert-manager.sh
 
-demo:
-	chmod +x scripts/deploy-demo.sh
-	./scripts/deploy-demo.sh
+# -------------------------
+# API LAYER (CRDs ONLY)
+# -------------------------
+api: gateway-crds wait-gateway-crds
 
 gateway-crds:
 	chmod +x scripts/install-gateway-api.sh
 	./scripts/install-gateway-api.sh
 
-gateway:
-	kubectl apply -f manifests/gateway/
+wait-gateway-crds:
+	kubectl wait --for condition=Established \
+		crd/gateways.gateway.networking.k8s.io \
+		--timeout=300s
+
+# -------------------------
+# CONTROLLERS
+# -------------------------
+controllers: envoy-gateway gateway-class
+
+envoy-gateway:
+	kubectl apply --server-side --force-conflicts -f https://github.com/envoyproxy/gateway/releases/download/v1.7.0/install.yaml
+	kubectl wait -n envoy-gateway-system \
+		--for=condition=Available deployment \
+		--all --timeout=1000h
+
+gateway-class:
+	kubectl apply -f manifests/gateway/gatewayclass.yaml
+	@echo "Waiting for GatewayClass to be accepted..."
+	sleep 5
+
+# -------------------------
+# SECURITY (TLS)
+# -------------------------
+tls:
+	kubectl apply -f manifests/gateway/tls-setup.yaml
+	@echo "Waiting for Certificate to be issued in envoy-gateway-system..."
+	kubectl wait -n envoy-gateway-system certificate frontend-tls --for=condition=Ready --timeout=300s
+
+# -------------------------
+# WORKLOADS & ROUTING
+# -------------------------
+demo:
+	chmod +x scripts/deploy-demo.sh
+	./scripts/deploy-demo.sh
+	# Apply Gateway and HTTPRoutes
+	kubectl apply -f manifests/gateway/gateway.yaml
+	kubectl apply -f manifests/gateway/httproute.yaml
 
 clean:
 	k3d cluster delete calico-demo-cluster || true

@@ -52,6 +52,8 @@ echo "[INFO] Creating k3d cluster: $CLUSTER_NAME"
 
 k3d cluster create "$CLUSTER_NAME" \
   -s 1 -a 2 \
+  -p "8080:80@loadbalancer" \
+  -p "8443:443@loadbalancer" \
   --k3s-arg '--flannel-backend=none@server:*' \
   --k3s-arg '--disable-network-policy@server:*' \
   --k3s-arg '--disable=traefik@server:*' \
