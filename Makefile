@@ -28,7 +28,7 @@ gateway-crds:
 wait-gateway-crds:
 	kubectl wait --for condition=Established \
 		crd/gateways.gateway.networking.k8s.io \
-		--timeout=300s
+		--timeout=1000h
 
 # -------------------------
 # CONTROLLERS
@@ -50,7 +50,10 @@ gateway-class:
 # SECURITY (TLS)
 # -------------------------
 tls:
+	@echo "Applying TLS Infrastructure and Permissions..."
 	kubectl apply -f manifests/gateway/tls-setup.yaml
+	# ReferenceGrant allows the Gateway in 'default' to access the Secret in 'envoy-gateway-system'
+	kubectl apply -f manifests/gateway/reference-grant.yaml
 	@echo "Waiting for Certificate to be issued in envoy-gateway-system..."
 	kubectl wait -n envoy-gateway-system certificate frontend-tls --for=condition=Ready --timeout=300s
 
@@ -61,8 +64,11 @@ demo:
 	chmod +x scripts/deploy-demo.sh
 	./scripts/deploy-demo.sh
 	# Apply Gateway and HTTPRoutes
+	@echo "Configuring Gateway and Routing..."
 	kubectl apply -f manifests/gateway/gateway.yaml
 	kubectl apply -f manifests/gateway/httproute.yaml
+	@echo "Waiting for Gateway to be Programmed..."
+	kubectl wait --for=condition=Programmed gateway/calico-demo-gw --timeout=1000h
 
 clean:
 	k3d cluster delete calico-demo-cluster || true
