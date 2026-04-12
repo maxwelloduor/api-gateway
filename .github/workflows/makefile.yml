@@ -14,6 +14,9 @@ jobs:
     steps:
     - uses: actions/checkout@v6
 
+    - name: Generate configure script
+      run: autoreconf -i
+
     - name: configure
       run: ./configure
 
