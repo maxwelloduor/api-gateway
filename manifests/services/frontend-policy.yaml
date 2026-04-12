@@ -1,0 +1,11 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway
+  namespace: default
+spec:
+  selector: app == "frontend"
+  ingress:
+    - action: Allow
+      source:
+        namespaceSelector: kubernetes.io/metadata.name == "calico-system"
