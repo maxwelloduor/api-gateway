@@ -55,7 +55,6 @@ kubectl wait --for=condition=Ready pod \
   -n calico-system \
   --timeout=1000h
 
-# 🔹 HANDLE kube-controllers separately (known flaky startup)
 echo "=== Waiting for calico-kube-controllers ==="
 
 RETRIES=100
@@ -77,6 +76,7 @@ echo "=== Verifying full Calico readiness ==="
 kubectl get pods -n calico-system
 
 echo "=== Checking tigerastatus (final validation) ==="
+kubectl wait --for=condition=Available tigerastatus/calico --timeout=1000h
 kubectl get tigerastatus || true
 
 echo "=== Calico installation COMPLETE ==="

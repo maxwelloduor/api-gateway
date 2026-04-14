@@ -1,7 +1,8 @@
-.PHONY: all bootstrap platform api controllers demo clean tls
+.PHONY: all bootstrap api controllers tls demo canary obs mesh clean
 
 all: bootstrap api controllers tls demo
 
+# --- INFRASTRUCTURE LAYER ---
 bootstrap: cluster calico cert
 
 cluster:
@@ -16,9 +17,7 @@ cert:
 	chmod +x scripts/install-cert-manager.sh
 	./scripts/install-cert-manager.sh
 
-# -------------------------
-# API LAYER (CRDs ONLY)
-# -------------------------
+# --- API LAYER (CRDs) ---
 api: gateway-crds wait-gateway-crds
 
 gateway-crds:
@@ -26,49 +25,62 @@ gateway-crds:
 	./scripts/install-gateway-api.sh
 
 wait-gateway-crds:
-	kubectl wait --for condition=Established \
-		crd/gateways.gateway.networking.k8s.io \
-		--timeout=1000h
+	kubectl wait --for condition=Established crd/gateways.gateway.networking.k8s.io --timeout=60s
 
-# -------------------------
-# CONTROLLERS
-# -------------------------
+# --- CONTROLLERS ---
 controllers: envoy-gateway gateway-class
 
 envoy-gateway:
-	kubectl apply --server-side --force-conflicts -f https://github.com/envoyproxy/gateway/releases/download/v1.7.0/install.yaml
-	kubectl wait -n envoy-gateway-system \
-		--for=condition=Available deployment \
-		--all --timeout=1000h
+	kubectl apply --server-side --force-conflicts -f https://github.com/envoyproxy/gateway/releases/download/v1.1.0/install.yaml
+	kubectl wait -n envoy-gateway-system --for=condition=Available deployment --all --timeout=300s
 
 gateway-class:
 	kubectl apply -f manifests/gateway/gatewayclass.yaml
-	@echo "Waiting for GatewayClass to be accepted..."
 	sleep 5
 
-# -------------------------
-# SECURITY (TLS)
-# -------------------------
+# --- SECURITY (TLS) ---
 tls:
 	@echo "Applying TLS Infrastructure and Permissions..."
 	kubectl apply -f manifests/gateway/tls-setup.yaml
-	# ReferenceGrant allows the Gateway in 'default' to access the Secret in 'envoy-gateway-system'
 	kubectl apply -f manifests/gateway/reference-grant.yaml
-	@echo "Waiting for Certificate to be issued in envoy-gateway-system..."
-	kubectl wait -n envoy-gateway-system certificate frontend-tls --for=condition=Ready --timeout=300s
+	@echo "Waiting for Certificate..."
+	kubectl wait -n envoy-gateway-system certificate frontend-tls --for=condition=Ready --timeout=100h
 
-# -------------------------
-# WORKLOADS & ROUTING
-# -------------------------
+# --- WORKLOADS & ROUTING ---
 demo:
 	chmod +x scripts/deploy-demo.sh
 	./scripts/deploy-demo.sh
-	# Apply Gateway and HTTPRoutes
 	@echo "Configuring Gateway and Routing..."
 	kubectl apply -f manifests/gateway/gateway.yaml
 	kubectl apply -f manifests/gateway/httproute.yaml
-	@echo "Waiting for Gateway to be Programmed..."
-	kubectl wait --for=condition=Programmed gateway/calico-demo-gw --timeout=1000h
+	kubectl wait --for=condition=Programmed gateway/calico-demo-gw --timeout=100h
+
+# 🔥 1 & 2. CANARY DEPLOYMENTS & TRAFFIC SPLITTING
+canary:
+	@echo "Deploying Frontend V2 (Canary)..."
+	kubectl apply -f manifests/services/canary/frontend-v2.yaml
+	@echo "Waiting for Canary Rollout..."
+	kubectl rollout status deployment/frontend-v2 --timeout=120s
+	@echo "Applying 90/10 Traffic Split..."
+	# This assumes you have a version of httproute.yaml with weights
+	kubectl apply -f manifests/gateway/httproute.yaml
+
+# 🔥 3. OBSERVABILITY (PROMETHEUS & GRAFANA)
+obs:
+	git clone --depth 1 https://github.com/prometheus-operator/kube-prometheus.git
+
+	kubectl apply --server-side -f kube-prometheus/manifests/setup
+
+	until kubectl get servicemonitors --all-namespaces ; do date; sleep 1; echo ""; done
+
+	kubectl apply -f kube-prometheus/manifests/
+
+# 🔥 4. SERVICE MESH EVOLUTION (CALICO POLICY)
+mesh:
+	@echo "Enforcing Zero-Trust mTLS and Staged Policies..."
+	kubectl apply -f manifests/calico/staged-policy.yaml
+	kubectl apply -f manifests/services/base/frontend-policy.yaml
+	@echo "Calico is now governing East-West traffic."
 
 clean:
 	k3d cluster delete calico-demo-cluster || true

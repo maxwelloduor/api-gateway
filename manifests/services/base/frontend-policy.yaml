@@ -1,0 +1,16 @@
+apiVersion: projectcalico.org/v3
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway
+  namespace: default
+spec:
+  # This selector must cover BOTH v1 and v2
+  selector: app == "frontend" || app == "frontend-v2"
+  ingress:
+    - action: Allow
+      protocol: TCP
+      source:
+        namespaceSelector: kubernetes.io/metadata.name == "envoy-gateway-system"
+      destination:
+        ports:
+          - 8080

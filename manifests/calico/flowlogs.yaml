@@ -1,0 +1,6 @@
+apiVersion: projectcalico.org/v3
+kind: FlowLog
+metadata:
+  name: cluster-flowlogs
+spec:
+  flowLogsFileEnabled: true

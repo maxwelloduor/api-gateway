@@ -35,3 +35,7 @@ spec:
       backendRefs:
         - name: frontend
           port: 80
+          weight: 90
+        - name: frontend-v2
+          port: 80
+          weight: 10

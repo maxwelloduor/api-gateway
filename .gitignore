@@ -14,4 +14,4 @@ Thumbs.db
 *.sh~
 
 # Env files
-.env
+.envkube-prometheus/
